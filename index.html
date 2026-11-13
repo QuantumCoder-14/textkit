@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TextKit — clean up text without pasting it into a website that keeps it</title>
+<meta name="description" content="Change case, count words, sort and deduplicate lines, slugify, and find-and-replace with regex. Runs entirely in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#faf7f2; --ink:#20261f; --soft:#4a544a; --muted:#7d877c;
+    --line:rgba(32,38,31,0.14); --line-soft:rgba(32,38,31,0.07);
+    --accent:#7c4a2d; --accent-soft:rgba(124,74,45,0.08);
+    --sage:#5a7350;
+    --serif:'Instrument Serif',Georgia,serif;
+    --sans:'Public Sans',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#151a15; --ink:#e6ebe3; --soft:#bcc6b8; --muted:#8d9a8b;
+      --line:rgba(230,235,227,0.16); --line-soft:rgba(230,235,227,0.08);
+      --accent:#d29a76; --accent-soft:rgba(210,154,118,0.13);
+      --sage:#9dbb8f;
+    }
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent)}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  header{padding:38px 0 26px;border-bottom:1px solid var(--line-soft)}
+  h1{font-family:var(--serif);font-size:clamp(34px,5vw,50px);font-weight:400;letter-spacing:-.01em;line-height:1.02}
+  h1 em{font-style:italic;color:var(--accent)}
+  .tag{color:var(--muted);margin-top:8px;max-width:52ch}
+  main{padding:28px 0 64px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  label{display:block;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:7px}
+  textarea,input[type=text]{width:100%;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+    padding:12px;font-family:var(--mono);font-size:13px;line-height:1.6;resize:vertical}
+  @media (prefers-color-scheme: dark){ textarea,input[type=text]{background:#1d241d} }
+  textarea:focus,input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  textarea{min-height:330px}
+  .tools{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 4px}
+  button{appearance:none;cursor:pointer;font-family:var(--mono);font-size:11.5px;color:var(--soft);
+    background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 11px}
+  @media (prefers-color-scheme: dark){ button{background:#1d241d} }
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:500}
+  button.primary:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+  .group{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+    margin:18px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--line-soft)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line-soft);
+    border:1px solid var(--line-soft);margin-bottom:18px}
+  @media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:var(--paper);padding:12px 14px}
+  .stat b{display:block;font-family:var(--serif);font-size:24px;line-height:1.1;font-weight:400}
+  .stat span{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+  .replace{display:grid;grid-template-columns:1fr 1fr auto auto;gap:8px;align-items:end;margin-top:8px}
+  @media(max-width:640px){.replace{grid-template-columns:1fr 1fr}}
+  .replace label{margin-bottom:4px}
+  .note{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:10px;min-height:16px}
+  .note.err{color:#a33b2a}
+  @media (prefers-color-scheme: dark){ .note.err{color:#e0836f} }
+  footer{border-top:1px solid var(--line-soft);padding:22px 0 38px}
+  .foot{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .foot a{color:var(--soft);text-decoration:none;border-bottom:1px dotted var(--line)}
+  .foot a:hover{color:var(--accent);border-color:var(--accent)}
+  code{font-family:var(--mono);font-size:12.5px;background:var(--accent-soft);padding:1px 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>TextKit<em>.</em></h1>
+    <p class="tag">Case, counts, sorting, deduplication, slugs and regex replace. Your text is processed in the page and never sent anywhere.</p>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="stats">
+      <div class="stat"><b id="s-chars">0</b><span>characters</span></div>
+      <div class="stat"><b id="s-words">0</b><span>words</span></div>
+      <div class="stat"><b id="s-lines">0</b><span>lines</span></div>
+      <div class="stat"><b id="s-read">0m</b><span>reading time</span></div>
+    </div>
+
+    <div class="grid">
+      <div>
+        <label for="input">Your text</label>
+        <textarea id="input" spellcheck="false" placeholder="Paste anything here."></textarea>
+
+        <div class="group">Case</div>
+        <div class="tools">
+          <button data-case="upper">UPPER</button>
+          <button data-case="lower">lower</button>
+          <button data-case="title">Title Case</button>
+          <button data-case="sentence">Sentence case</button>
+          <button data-case="camel">camelCase</button>
+          <button data-case="snake">snake_case</button>
+          <button data-case="kebab">kebab-case</button>
+          <button data-case="slug">url-slug</button>
+        </div>
+
+        <div class="group">Lines</div>
+        <div class="tools">
+          <button data-lines="sort">Sort A-Z</button>
+          <button data-lines="sort-desc">Sort Z-A</button>
+          <button data-lines="sort-len">Sort by length</button>
+          <button data-lines="dedupe">Remove duplicates</button>
+          <button data-lines="trim">Trim spaces</button>
+          <button data-lines="blank">Drop empty lines</button>
+          <button data-lines="number">Number lines</button>
+          <button data-lines="reverse">Reverse order</button>
+          <button data-lines="shuffle">Shuffle</button>
+        </div>
+
+        <div class="group">Find and replace</div>
+        <div class="replace">
+          <div><label for="find">Find</label><input type="text" id="find" placeholder="text or pattern"></div>
+          <div><label for="replacement">Replace with</label><input type="text" id="replacement" placeholder="leave empty to delete"></div>
+          <button id="replace-one" title="Replace all occurrences">Replace all</button>
+          <button id="use-regex" aria-pressed="false" title="Treat Find as a regular expression">.*</button>
+        </div>
+
+        <div class="tools" style="margin-top:12px">
+          <button class="primary" id="copy">Copy result</button>
+          <button id="swap">Use result as input</button>
+          <button id="clear">Clear</button>
+        </div>
+        <div class="note" id="note"></div>
+      </div>
+
+      <div>
+        <label for="output">Result</label>
+        <textarea id="output" spellcheck="false" placeholder="The result appears here. Nothing overwrites your text until you press a button."></textarea>
+        <div class="note" id="outnote"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <span>Built by <a href="https://github.com/QuantumCoder-14">Siddhant Neekhra</a> · MIT with Commons Clause</span>
+      <span>No server, no cookies. <a href="https://quantumcoder-14.github.io/">More tools</a></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= CORE (tested separately) ================= */
+  // <<CORE
+  var SMALL_WORDS = ['a','an','and','as','at','but','by','for','from','in','into','nor','of','on','onto','or','over','per','the','to','up','via','with'];
+
+  function splitWords(text) {
+    return String(text).replace(/[_\-\s]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  }
+
+  function toTitle(text) {
+    return String(text).toLowerCase().replace(/\b([a-z])(\w*)/g, function (match, first, rest, offset, whole) {
+      var word = first + rest;
+      var isEdge = offset === 0 || /[.!?:]\s*$/.test(whole.slice(Math.max(0, offset - 3), offset));
+      if (isEdge || SMALL_WORDS.indexOf(word) === -1) return word.charAt(0).toUpperCase() + word.slice(1);
+      return word;
+    });
+  }
+
+  function toSentence(text) {
+    var lower = String(text).toLowerCase();
+    return lower.replace(/(^\s*\w|[.!?]\s+\w)/g, function (m) { return m.toUpperCase(); });
+  }
+
+  function toSlug(text) {
+    return String(text).normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  function toCamel(text) {
+    var words = splitWords(text).map(function (w) { return w.toLowerCase(); });
+    return words.map(function (w, i) {
+      return i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1);
+    }).join('');
+  }
+
+  function toSnake(text) { return splitWords(text).map(function (w) { return w.toLowerCase(); }).join('_'); }
+  function toKebab(text) { return splitWords(text).map(function (w) { return w.toLowerCase(); }).join('-'); }
+
+  function transformCase(text, kind) {
+    switch (kind) {
+      case 'upper': return String(text).toUpperCase();
+      case 'lower': return String(text).toLowerCase();
+      case 'title': return toTitle(text);
+      case 'sentence': return toSentence(text);
+      case 'camel': return toCamel(text);
+      case 'snake': return toSnake(text);
+      case 'kebab': return toKebab(text);
+      case 'slug': return toSlug(text);
+      default: return text;
+    }
+  }
+
+  function sortLines(text, mode) {
+    var lines = String(text).split('\n');
+    if (mode === 'sort') lines.sort(function (a, b) { return a.localeCompare(b); });
+    else if (mode === 'sort-desc') lines.sort(function (a, b) { return b.localeCompare(a); });
+    else if (mode === 'sort-len') lines.sort(function (a, b) { return a.length - b.length || a.localeCompare(b); });
+    else if (mode === 'reverse') lines.reverse();
+    return lines.join('\n');
+  }
+
+  function dedupeLines(text) {
+    var seen = Object.create(null), out = [];
+    String(text).split('\n').forEach(function (line) {
+      var key = line.trim();
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push(line);
+    });
+    return out.join('\n');
+  }
+
+  function transformLines(text, kind) {
+    if (kind === 'sort' || kind === 'sort-desc' || kind === 'sort-len' || kind === 'reverse') return sortLines(text, kind);
+    if (kind === 'dedupe') return dedupeLines(text);
+    var lines = String(text).split('\n');
+    if (kind === 'trim') return lines.map(function (l) { return l.trim(); }).join('\n');
+    if (kind === 'blank') return lines.filter(function (l) { return l.trim() !== ''; }).join('\n');
+    if (kind === 'number') return lines.map(function (l, i) { return (i + 1) + '. ' + l; }).join('\n');
+    return text;
+  }
+
+  function countStats(text) {
+    var value = String(text);
+    var words = value.trim() ? value.trim().split(/\s+/).length : 0;
+    var lines = value === '' ? 0 : value.split('\n').length;
+    return {
+      characters: value.length,
+      words: words,
+      lines: lines,
+      // 200 words per minute is the usual reading estimate for adults
+      minutes: Math.max(1, Math.round(words / 200))
+    };
+  }
+
+  function findReplace(text, find, replacement, useRegex) {
+    if (!find) return { ok: true, value: text, count: 0 };
+    if (useRegex) {
+      var re;
+      try { re = new RegExp(find, 'g'); }
+      catch (err) { return { ok: false, error: 'Invalid pattern: ' + err.message }; }
+      var matches = String(text).match(re);
+      return { ok: true, value: String(text).replace(re, replacement), count: matches ? matches.length : 0 };
+    }
+    var parts = String(text).split(find);
+    return { ok: true, value: parts.join(replacement), count: parts.length - 1 };
+  }
+  // CORE>>
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { transformCase: transformCase, transformLines: transformLines,
+      countStats: countStats, findReplace: findReplace, toSlug: toSlug, toTitle: toTitle,
+      toCamel: toCamel, toSnake: toSnake, toKebab: toKebab, dedupeLines: dedupeLines };
+  }
+
+  /* ================= UI ================= */
+  var $ = function (id) { return document.getElementById(id); };
+  var useRegex = false;
+
+  function note(text, isError) {
+    var el = $('note');
+    el.textContent = text || '';
+    el.className = 'note' + (isError ? ' err' : '');
+  }
+
+  function refreshStats() {
+    var stats = countStats($('input').value);
+    $('s-chars').textContent = stats.characters;
+    $('s-words').textContent = stats.words;
+    $('s-lines').textContent = stats.lines;
+    $('s-read').textContent = stats.minutes + 'm';
+  }
+
+  function apply(fn, label) {
+    var before = $('input').value;
+    var after = fn(before);
+    $('output').value = after;
+    $('outnote').textContent = after === before
+      ? 'No change.'
+      : label + ': ' + before.length + ' -> ' + after.length + ' characters.';
+    refreshStats();
+  }
+
+  document.querySelectorAll('[data-case]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var kind = button.getAttribute('data-case');
+      apply(function (text) { return transformCase(text, kind); }, kind);
+      note('');
+    });
+  });
+
+  document.querySelectorAll('[data-lines]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var kind = button.getAttribute('data-lines');
+      if (kind === 'shuffle') {
+        apply(function (text) {
+          var lines = text.split('\n');
+          for (var i = lines.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var tmp = lines[i]; lines[i] = lines[j]; lines[j] = tmp;
+          }
+          return lines.join('\n');
+        }, 'shuffle');
+        return;
+      }
+      apply(function (text) { return transformLines(text, kind); }, kind);
+      note('');
+    });
+  });
+
+  $('use-regex').addEventListener('click', function () {
+    useRegex = !useRegex;
+    $('use-regex').setAttribute('aria-pressed', useRegex ? 'true' : 'false');
+    $('use-regex').style.background = useRegex ? 'var(--accent)' : '';
+    $('use-regex').style.color = useRegex ? '#fff' : '';
+    note(useRegex ? 'Regular expressions on. Flags: global.' : '');
+  });
+
+  $('replace-one').addEventListener('click', function () {
+    var result = findReplace($('input').value, $('find').value, $('replacement').value, useRegex);
+    if (!result.ok) { note(result.error, true); return; }
+    $('output').value = result.value;
+    $('outnote').textContent = result.count + ' replacement' + (result.count === 1 ? '' : 's') + '.';
+    note('');
+  });
+
+  $('copy').addEventListener('click', function () {
+    var text = $('output').value;
+    if (!text) { note('Nothing to copy yet.', true); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { note('Copied.'); },
+        function () { note('Copy failed — select the text and copy manually.', true); });
+    } else {
+      $('output').select();
+      note('Press Ctrl+C to copy the selection.');
+    }
+  });
+
+  $('swap').addEventListener('click', function () {
+    var text = $('output').value;
+    if (!text) { note('The result is empty.', true); return; }
+    $('input').value = text;
+    refreshStats();
+    note('Result moved into the input.');
+  });
+
+  $('clear').addEventListener('click', function () {
+    $('input').value = '';
+    $('output').value = '';
+    $('outnote').textContent = '';
+    note('');
+    refreshStats();
+  });
+
+  $('input').addEventListener('input', refreshStats);
+  refreshStats();
+})();
+</script>
+</body>
+</html>
